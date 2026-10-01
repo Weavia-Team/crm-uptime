@@ -1,0 +1,32 @@
+# WEAVIA CRM uptime: GitHub checks crm.wevia.tech every 10 minutes from outside our server and tells the owner
+# in Telegram when it does not answer (the CRM's own monitor lives on the same server and goes down with it).
+# The CRM server re-enables this workflow every night, so GitHub's 60-day inactivity pause never stops it.
+name: uptime
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: crm.wevia.tech answers
+        env:
+          TG_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://crm.wevia.tech/login || echo 000)
+            if [ "$code" = "200" ]; then echo "ok ($code)"; exit 0; fi
+            echo "attempt $i: $code"; sleep 30
+          done
+          now=$(TZ=Europe/Moscow date +'%d.%m %H:%M')
+          curl -s -o /dev/null "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+            --data-urlencode "chat_id=$TG_CHAT" \
+            --data-urlencode "text=🔴 crm.wevia.tech не отвечает ($now МСК, код $code). Проверка с GitHub повторяется каждые 10 минут."
+          exit 1
